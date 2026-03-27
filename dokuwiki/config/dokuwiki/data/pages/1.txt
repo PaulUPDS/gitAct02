@@ -1,0 +1,58 @@
+====== Despliegue de CMSimple (8083) ======
+
+===== 1. Análisis del Servicio =====
+Se seleccionó **CMSimple** por su arquitectura de "Flat-File" (archivos planos). A diferencia de WordPress, no requiere una base de datos MariaDB/MySQL, lo que reduce el consumo de memoria RAM en la VM MiniOS, ideal para entornos de contenedores ligeros.
+
+===== 2. Preparación del Entorno Persistente =====
+Para evitar la pérdida de datos al detener el contenedor (comportamiento por defecto de Podman), se crearon volúmenes en el sistema de archivos del host.
+  * **Comandos ejecutados:**
+<code>
+mkdir -p /home/live/podman/cms/html
+cd /home/live/podman/cms
+</code>
+  * **Razón técnica:** El subdirectorio ''/html'' será el espejo de la carpeta ''/app'' dentro del contenedor.
+
+===== 3. Configuración de Orquestación (YAML) =====
+Se utilizó la imagen industrial ''webdevops/php-nginx:alpine''. Se eligió la variante **Alpine** por su bajo peso (aprox. 20MB) y seguridad.
+
+<code yaml>
+services:
+  cmsimple:
+    image: docker.io/webdevops/php-nginx:alpine
+    container_name: cmsimple
+    ports:
+      - "8083:80"  # Mapeo: Puerto 8083 (Host) -> Puerto 80 (Contenedor)
+    volumes:
+      - /home/live/podman/cms/html:/app:Z # El flag :Z ajusta los contextos de SELinux
+    environment:
+      - WEB_DOCUMENT_ROOT=/app
+</code>
+
+===== 4. Proceso de Transferencia y Seguridad =====
+Debido a que el servidor de origen de CMSimple bloquea peticiones automáticas de ''wget'', se realizó una triangulación de archivos:
+
+  * **Fase 1 (Host Windows):** Descarga manual del binario comprimido.
+  * **Fase 2 (Puente SSH):** Se utilizó **SCP (Secure Copy)**. Esto garantiza que los archivos viajen cifrados entre la PC física y la VM.
+<code>
+# Ejecutado desde el CMD de Windows
+scp -r * live@192.168.100.101:/home/live/podman/cms/html/
+</code>
+  * **Fase 3 (Permisos de Escritura):** Por defecto, Nginx en el contenedor corre con un usuario de bajos privilegios. Se otorgaron permisos recursivos para permitir que el CMS guarde cambios en su propia configuración:
+<code>
+sudo chmod -R 777 /home/live/podman/cms/html
+</code>
+
+===== 5. Verificación y Acceso Final =====
+Una vez levantado el servicio con ''podman-compose up -d'', se verificó la integridad mediante el log del contenedor. 
+  * **URL:** http://192.168.100.101:8083
+  * **Configuración Inicial:** Se realizó el login con la credencial maestra temporal (''test'') y se procedió a la edición del núcleo para personalizar el sitio.
+
+===== Estados de los contenedores =====
+<code>
+live@minios:~/podman/nginx/html$ podman ps --format "table {{.Names}}\t{{.Ports}}\t{{.Status}}"
+NAMES                  PORTS                                        STATUS
+pagweb_web-opencode_1  0.0.0.0:8081->80/tcp                         Up About an hour
+nginx_web_1            0.0.0.0:8080->80/tcp                         Up 13 minutes
+dokuwiki               0.0.0.0:8082->80/tcp, 0.0.0.0:8443->443/tcp  Up 13 minutes
+cmsimple               0.0.0.0:8083->80/tcp, 443/tcp, 9000/tcp      Up 13 minutes
+</code>

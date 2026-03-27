@@ -1,0 +1,14 @@
+services:
+  dokuwiki:
+    image: lscr.io/linuxserver/dokuwiki:latest
+    container_name: dokuwiki
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/La_Paz
+    volumes:
+      - /home/live/podman/dokuwiki/config:/config:Z
+    ports:
+      - "80:80"
+      - "8443:443"
+    restart: unless-stopped
